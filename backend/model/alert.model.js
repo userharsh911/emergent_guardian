@@ -35,7 +35,7 @@ const alertSchema = new mongoose.Schema({
     },
     mode:{
         type:String,
-        enum:["Active","Cancelled","End"]
+        enum:["Active","Cancelled","End","Alloted"]
     },
     volunteers:[{
         type:mongoose.Schema.Types.ObjectId,

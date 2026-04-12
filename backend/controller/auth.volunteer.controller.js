@@ -6,7 +6,22 @@ export const applyVolunteerController = async(req,res)=>{
     try {
         const {email,password,phone,coordinates} = req.body;
 
-        if(!email || !password || !phone || !coordinates[0] || !coordinates[1]) return res.status(400).json({success:false,message:"All fields are required"});
+        let latitude;
+        let longitude;
+
+        if (Array.isArray(coordinates)) {
+            [longitude, latitude] = coordinates;
+        } else {
+            latitude = coordinates?.latitude ?? coordinates?.lat;
+            longitude = coordinates?.longitude ?? coordinates?.lng;
+        }
+
+        latitude = Number(latitude);
+        longitude = Number(longitude);
+
+        if(!email || !password || !phone || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            return res.status(400).json({success:false,message:"All fields are required"});
+        }
 
         const volunteerExist = await Volunteer.findOne({email});
         if(volunteerExist) return res.status(409).json({success:false,message:"Email already exist"});
@@ -22,7 +37,7 @@ export const applyVolunteerController = async(req,res)=>{
             phone,
             location:{
                 type:"Point",
-                coordinates
+                coordinates:[longitude, latitude]
             }
         })
 
