@@ -169,6 +169,16 @@ export const volunteerSelectAlertController = async (req, res) => {
             return res.status(400).json({ success: false, message: "Volunteer coordinates are invalid" });
         }
 
+        const alreadyAssignedAlert = await Alert.findOne({
+            mode: "Alloted",
+            volunteer_id: volunteer._id,
+            _id: { $ne: alertId },
+        }).select("_id");
+
+        if (alreadyAssignedAlert) {
+            return res.status(409).json({ success: false, message: "You are already assigned to another alert" });
+        }
+
         const { latitude, longitude } = parsedCoordinates;
 
         const selectedAlert = await Alert.findOneAndUpdate(
@@ -190,6 +200,9 @@ export const volunteerSelectAlertController = async (req, res) => {
                 $set: {
                     volunteer_id: volunteer._id,
                     mode: "Alloted",
+                },
+                $addToSet: {
+                    volunteers: volunteer._id,
                 },
             },
             { new: true }
@@ -229,7 +242,15 @@ export const getAlertStatusController = async (req, res) => {
             return res.status(404).json({ success: false, message: "Alert not found" });
         }
 
-        const nearbyVolunteers = await Volunteer.find({ _id: { $in: alert.volunteers || [] } })
+        const volunteerIdsSet = new Set((alert.volunteers || []).map((id) => id.toString()));
+        const assignedVolunteerId = alert.volunteer_id?._id?.toString() || alert.volunteer_id?.toString();
+        if (assignedVolunteerId) {
+            volunteerIdsSet.add(assignedVolunteerId);
+        }
+
+        const volunteerIds = Array.from(volunteerIdsSet);
+
+        const nearbyVolunteers = await Volunteer.find({ _id: { $in: volunteerIds } })
             .select("_id email phone location mode")
             .lean();
 
