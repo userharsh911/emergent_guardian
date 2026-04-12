@@ -41,6 +41,14 @@ export const createAlertController = async (req, res) => {
             mode: { $nin: ["Busy", "Alloted"] }
         }).select("_id email phone location mode push_token")
 
+        const nearbyVolunteers = volunteers.map((volunteer) => ({
+            _id: volunteer._id,
+            email: volunteer.email,
+            phone: volunteer.phone,
+            mode: volunteer.mode,
+            location: volunteer.location
+        }));
+
         const emergencyAlert = new Alert({
             user_id: user._id,
             description: description ? description : null,
@@ -61,7 +69,7 @@ export const createAlertController = async (req, res) => {
             "Nearby emergency detected",
             `Emergency available nearby, by ${user?.fullname || "a user"}`,
             {
-                screen: "/(app)/(tabs)/(home)/hireVolunteer",
+                screen: "/(app)/(tabs)/(home)",
                 alertId: emergencyAlert._id.toString()
             }
         );
@@ -70,6 +78,7 @@ export const createAlertController = async (req, res) => {
             success: true,
             message: "Alert sent successfully",
             alert: emergencyAlert,
+            nearbyVolunteers,
             volunteerCount: volunteers.length,
             notifiedCount: tokens.length
         });
