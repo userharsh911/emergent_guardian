@@ -137,7 +137,83 @@ const toIdString = (value) => {
     return null;
 };
 
-const notifyAlertRealtime = (alertDoc, reason = "updated") => {
+const findVolunteerIdsNearCoordinates = async ({ latitude, longitude, maxDistance = NEARBY_DISTANCE_METERS }) => {
+    try {
+        const nearbyVolunteers = await Volunteer.find({
+            location: {
+                $nearSphere: {
+                    $geometry: {
+                        type: "Point",
+                        coordinates: [longitude, latitude],
+                    },
+                    $maxDistance: maxDistance,
+                },
+            },
+        })
+            .select("_id")
+            .lean();
+
+        return nearbyVolunteers
+            .map((volunteer) => toIdString(volunteer?._id))
+            .filter(Boolean);
+    } catch (error) {
+        console.log("volunteer notify geo fallback", error?.message || error);
+
+        const volunteers = await Volunteer.find({})
+            .select("_id location")
+            .lean();
+
+        return volunteers
+            .filter((volunteer) => {
+                const volunteerCoordinates = parseCoordinates(volunteer?.location?.coordinates);
+                if (!volunteerCoordinates) return false;
+
+                const distanceMeters = calculateDistanceMeters({
+                    from: { latitude, longitude },
+                    to: volunteerCoordinates,
+                });
+
+                return distanceMeters <= maxDistance;
+            })
+            .map((volunteer) => toIdString(volunteer?._id))
+            .filter(Boolean);
+    }
+};
+
+const resolveRelevantVolunteerIdsForAlert = async (alertDoc) => {
+    const volunteerIds = new Set();
+
+    if (Array.isArray(alertDoc?.volunteers)) {
+        alertDoc.volunteers.forEach((volunteerId) => {
+            const normalizedVolunteerId = toIdString(volunteerId);
+            if (normalizedVolunteerId) {
+                volunteerIds.add(normalizedVolunteerId);
+            }
+        });
+    }
+
+    const assignedVolunteerId = toIdString(alertDoc?.volunteer_id);
+    if (assignedVolunteerId) {
+        volunteerIds.add(assignedVolunteerId);
+    }
+
+    const parsedAlertCoordinates = parseCoordinates(alertDoc?.location?.coordinates);
+    if (parsedAlertCoordinates) {
+        const nearbyVolunteerIds = await findVolunteerIdsNearCoordinates({
+            latitude: parsedAlertCoordinates.latitude,
+            longitude: parsedAlertCoordinates.longitude,
+            maxDistance: NEARBY_DISTANCE_METERS,
+        });
+
+        nearbyVolunteerIds.forEach((volunteerId) => {
+            volunteerIds.add(volunteerId);
+        });
+    }
+
+    return Array.from(volunteerIds);
+};
+
+const notifyAlertRealtime = async (alertDoc, reason = "updated", volunteerIds = []) => {
     const alertId = toIdString(alertDoc?._id);
     const userId = toIdString(alertDoc?.user_id);
 
@@ -145,7 +221,15 @@ const notifyAlertRealtime = (alertDoc, reason = "updated") => {
         emitUserAlertRefresh(userId, { alertId, reason });
     }
 
-    emitVolunteerAlertsRefresh({ alertId, reason });
+    const explicitVolunteerIds = Array.isArray(volunteerIds)
+        ? volunteerIds.map((volunteerId) => toIdString(volunteerId)).filter(Boolean)
+        : [];
+
+    const targetVolunteerIds = explicitVolunteerIds.length
+        ? explicitVolunteerIds
+        : await resolveRelevantVolunteerIdsForAlert(alertDoc);
+
+    emitVolunteerAlertsRefresh({ alertId, reason }, targetVolunteerIds);
 };
 
 const hydrateAlert = async (alertId) => {
@@ -169,6 +253,12 @@ const releaseVolunteerAssignment = async (alertDoc) => {
     )
         .select("_id email phone mode location")
         .lean();
+};
+
+const hasVolunteerRespondedToAlert = (alertDoc, volunteerId) => {
+    if (!Array.isArray(alertDoc?.volunteers)) return false;
+
+    return alertDoc.volunteers.some((id) => String(id) === String(volunteerId));
 };
 
 export const createAlertController = async (req, res) => {
@@ -231,12 +321,16 @@ export const createAlertController = async (req, res) => {
                 coordinates: [longitude, latitude]
             },
             mode: "Active",
-            volunteers: volunteers.map((volunteer) => volunteer._id)
+            volunteers: []
         });
 
         await emergencyAlert.save();
 
-        notifyAlertRealtime(emergencyAlert, "created");
+        await notifyAlertRealtime(
+            emergencyAlert,
+            "created",
+            volunteers.map((volunteer) => volunteer._id)
+        );
 
         const tokens = volunteers.map((volunteer) => volunteer.push_token).filter(Boolean);
 
@@ -340,15 +434,15 @@ export const volunteerSelectAlertController = async (req, res) => {
         const { latitude, longitude } = parsedCoordinates;
 
         const alertToSelect = await Alert.findById(alertId)
-            .select("_id mode volunteer_id location")
+            .select("_id mode volunteer_id location volunteers")
             .lean();
 
         if (!alertToSelect) {
             return res.status(404).json({ success: false, message: "Alert not found" });
         }
 
-        if (alertToSelect.mode !== "Active" || alertToSelect.volunteer_id) {
-            return res.status(409).json({ success: false, message: "Alert is not available anymore" });
+        if (alertToSelect.mode !== "Active") {
+            return res.status(409).json({ success: false, message: "Alert is not accepting volunteer responses now" });
         }
 
         const parsedAlertCoordinates = parseCoordinates(alertToSelect?.location?.coordinates);
@@ -368,17 +462,14 @@ export const volunteerSelectAlertController = async (req, res) => {
             });
         }
 
+        const isAlreadyResponded = hasVolunteerRespondedToAlert(alertToSelect, volunteer._id);
+
         const selectedAlert = await Alert.findOneAndUpdate(
             {
                 _id: alertId,
                 mode: "Active",
-                volunteer_id: null,
             },
             {
-                $set: {
-                    volunteer_id: volunteer._id,
-                    mode: "Alloted",
-                },
                 $addToSet: {
                     volunteers: volunteer._id,
                 },
@@ -392,13 +483,122 @@ export const volunteerSelectAlertController = async (req, res) => {
             return res.status(409).json({ success: false, message: "Alert is not available anymore" });
         }
 
-        await Volunteer.findByIdAndUpdate(volunteer._id, { mode: "Alloted" });
+        await notifyAlertRealtime(selectedAlert, "volunteer-response");
 
-        notifyAlertRealtime(selectedAlert, "alloted");
-
-        return res.status(200).json({ success: true, alert: selectedAlert });
+        return res.status(200).json({
+            success: true,
+            message: isAlreadyResponded ? "Response already recorded" : "Response sent. Waiting for user to hire.",
+            alert: selectedAlert,
+        });
     } catch (error) {
         console.log("error while volunteer selecting alert ", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+export const hireVolunteerController = async (req, res) => {
+    try {
+        const { alertId, volunteerId } = req.body;
+
+        if (!alertId || !volunteerId) {
+            return res.status(400).json({ success: false, message: "Alert id and volunteer id are required" });
+        }
+
+        const alertToHire = await Alert.findOne({
+            _id: alertId,
+            user_id: req.user._id,
+        })
+            .select("_id mode location volunteer_id volunteers")
+            .lean();
+
+        if (!alertToHire) {
+            return res.status(404).json({ success: false, message: "Alert not found" });
+        }
+
+        if (alertToHire.mode !== "Active") {
+            return res.status(409).json({ success: false, message: "Alert is not available for hiring" });
+        }
+
+        if (!hasVolunteerRespondedToAlert(alertToHire, volunteerId)) {
+            return res.status(409).json({ success: false, message: "Volunteer has not responded on this alert yet" });
+        }
+
+        const volunteer = await Volunteer.findById(volunteerId)
+            .select("_id email phone mode location")
+            .lean();
+
+        if (!volunteer) {
+            return res.status(404).json({ success: false, message: "Volunteer not found" });
+        }
+
+        const volunteerBusyWithOtherAlert = await Alert.findOne({
+            _id: { $ne: alertToHire._id },
+            mode: "Alloted",
+            volunteer_id: volunteer._id,
+        })
+            .select("_id")
+            .lean();
+
+        if (volunteerBusyWithOtherAlert) {
+            return res.status(409).json({ success: false, message: "Volunteer is already hired on another alert" });
+        }
+
+        const parsedAlertCoordinates = parseCoordinates(alertToHire?.location?.coordinates);
+        const parsedVolunteerCoordinates = parseCoordinates(volunteer?.location?.coordinates);
+
+        if (!parsedAlertCoordinates || !parsedVolunteerCoordinates) {
+            return res.status(400).json({ success: false, message: "Alert or volunteer coordinates are invalid" });
+        }
+
+        const distanceMeters = calculateDistanceMeters({
+            from: parsedAlertCoordinates,
+            to: parsedVolunteerCoordinates,
+        });
+
+        if (distanceMeters > NEARBY_DISTANCE_METERS) {
+            return res.status(409).json({ success: false, message: "Volunteer is no longer within 500 meters" });
+        }
+
+        const hiredAlert = await Alert.findOneAndUpdate(
+            {
+                _id: alertToHire._id,
+                user_id: req.user._id,
+                mode: "Active",
+            },
+            {
+                $set: {
+                    mode: "Alloted",
+                    volunteer_id: volunteer._id,
+                },
+                $addToSet: {
+                    volunteers: volunteer._id,
+                },
+            },
+            { returnDocument: "after" }
+        )
+            .populate("user_id", "fullname email phone")
+            .populate("volunteer_id", "_id email phone mode location");
+
+        if (!hiredAlert) {
+            return res.status(409).json({ success: false, message: "Alert is not available for hiring" });
+        }
+
+        await Volunteer.findByIdAndUpdate(volunteer._id, { mode: "Alloted" });
+
+        await notifyAlertRealtime(hiredAlert, "alloted");
+
+        return res.status(200).json({
+            success: true,
+            message: "Volunteer hired successfully",
+            alert: hiredAlert,
+        });
+    } catch (error) {
+        console.log("error while hiring volunteer ", error);
+
+        if (error?.name === "CastError") {
+            return res.status(400).json({ success: false, message: "Invalid alert id or volunteer id" });
+        }
+
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -437,10 +637,20 @@ export const getAlertStatusController = async (req, res) => {
             maxDistance: NEARBY_DISTANCE_METERS,
             selectFields: "_id email phone location mode",
         });
+        const respondedVolunteerIds = Array.isArray(alert?.volunteers) ? alert.volunteers : [];
+        const respondedVolunteers = respondedVolunteerIds.length
+            ? await Volunteer.find({ _id: { $in: respondedVolunteerIds } })
+                .select("_id email phone location mode")
+                .lean()
+            : [];
 
         const nearbyVolunteersMap = new Map();
 
         dynamicNearbyVolunteers.forEach((volunteer) => {
+            nearbyVolunteersMap.set(volunteer._id.toString(), volunteer);
+        });
+
+        respondedVolunteers.forEach((volunteer) => {
             nearbyVolunteersMap.set(volunteer._id.toString(), volunteer);
         });
 
@@ -455,12 +665,13 @@ export const getAlertStatusController = async (req, res) => {
         }
 
         const nearbyVolunteers = Array.from(nearbyVolunteersMap.values());
+        const respondedVolunteersCount = respondedVolunteerIds.length;
 
         return res.status(200).json({
             success: true,
             alert,
             nearbyVolunteers,
-            canHire: alert.mode === "Alloted" && Boolean(alert.volunteer_id),
+            canHire: alert.mode === "Active" && respondedVolunteersCount > 0,
             lifecycle: getAlertLifecycleMeta(alert),
         });
     } catch (error) {
@@ -543,7 +754,7 @@ export const cancelAlertController = async (req, res) => {
         const releasedVolunteer = await releaseVolunteerAssignment(alert);
         const updatedAlert = await hydrateAlert(alert._id);
 
-        notifyAlertRealtime(updatedAlert, "cancelled");
+        await notifyAlertRealtime(updatedAlert, "cancelled");
 
         return res.status(200).json({
             success: true,
@@ -606,7 +817,7 @@ export const endAlertController = async (req, res) => {
         const releasedVolunteer = await releaseVolunteerAssignment(alert);
         const updatedAlert = await hydrateAlert(alert._id);
 
-        notifyAlertRealtime(updatedAlert, "ended");
+        await notifyAlertRealtime(updatedAlert, "ended");
 
         return res.status(200).json({
             success: true,

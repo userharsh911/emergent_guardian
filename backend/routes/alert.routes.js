@@ -6,6 +6,7 @@ import {
 	getAlertStatusController,
 	getUserAlertHistoryController,
 	getVolunteerNearbyAlertsController,
+	hireVolunteerController,
 	volunteerSelectAlertController,
 } from "../controller/alert.controller.js";
 import { userProtectedRoute, volunteerProtectedRoute } from "../middleware/protectedRoute.js";
@@ -27,6 +28,9 @@ alertRouter.post('/cancel', userProtectedRoute, cancelAlertController);
 
 alertRouter.post('/end/:token', userProtectedRoute, endAlertController);
 alertRouter.post('/end', userProtectedRoute, endAlertController);
+
+alertRouter.post('/hire/:token', userProtectedRoute, hireVolunteerController);
+alertRouter.post('/hire', userProtectedRoute, hireVolunteerController);
 
 alertRouter.post('/create/:token', userProtectedRoute, createAlertController);
 alertRouter.post('/create', userProtectedRoute, createAlertController);

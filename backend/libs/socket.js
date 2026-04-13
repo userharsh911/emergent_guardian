@@ -3,7 +3,6 @@ import { verifyJSONwebToken } from "./jwt.js";
 import User from "../model/user.model.js";
 import Volunteer from "../model/volunteer.model.js";
 
-const VOLUNTEER_ROOM = "volunteers:all";
 let ioInstance = null;
 
 const toIdString = (value) => {
@@ -89,7 +88,6 @@ export const initSocketServer = (httpServer) => {
         }
 
         if (socket.data?.role === "volunteer") {
-            socket.join(VOLUNTEER_ROOM);
             socket.join(`volunteer:${socket.data.volunteerId}`);
         }
 
@@ -114,8 +112,19 @@ export const emitUserAlertRefresh = (userId, payload = {}) => {
     });
 };
 
-export const emitVolunteerAlertsRefresh = (payload = {}) => {
+export const emitVolunteerAlertsRefresh = (payload = {}, volunteerIds = []) => {
     if (!ioInstance) return;
 
-    ioInstance.to(VOLUNTEER_ROOM).emit("volunteer-alerts:refresh", payload);
+    const targetVolunteerIds = Array.from(
+        new Set((volunteerIds || []).map((id) => toIdString(id)).filter(Boolean))
+    );
+
+    if (!targetVolunteerIds.length) return;
+
+    targetVolunteerIds.forEach((volunteerId) => {
+        ioInstance.to(`volunteer:${volunteerId}`).emit("volunteer-alerts:refresh", {
+            ...payload,
+            volunteerId,
+        });
+    });
 };

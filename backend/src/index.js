@@ -39,7 +39,7 @@ const runAlertExpiryJob = async () => {
             });
 
             if ((result.volunteerIds || []).length > 0) {
-                emitVolunteerAlertsRefresh({ reason: "expired" });
+                emitVolunteerAlertsRefresh({ reason: "expired" }, result.volunteerIds || []);
             }
         }
     } catch (error) {
