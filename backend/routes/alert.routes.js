@@ -15,9 +15,7 @@ alertRouter.post('/volunteer/select/:token', volunteerProtectedRoute, volunteerS
 alertRouter.post('/status/:alertId/:token', userProtectedRoute, getAlertStatusController);
 alertRouter.post('/status/:alertId', userProtectedRoute, getAlertStatusController);
 
-// token route for logged-in users
 alertRouter.post('/create/:token', userProtectedRoute, createAlertController);
-// fallback route for guest users (as_guest id in body)
 alertRouter.post('/create', userProtectedRoute, createAlertController);
 
 export default alertRouter

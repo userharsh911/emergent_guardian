@@ -22,19 +22,17 @@ export const userProtectedRoute = async(req,res,next)=>{
     try {
         const token = req.params?.token;
         const as_guest = req.body?.as_guest;
+        let user;
         if(!token && as_guest){
-            const user = await User.findOne({_id:as_guest});
+            user = await User.findOne({_id:as_guest});
             if(!user) return res.status(402).json({success:false,message:"Unauthorized: Invalid credentials"});
-            req.user = user;
-            next()
-        }
+        }else{
+            if(!token) return res.status(402).json({success:false,message:"Unauthorized"})
+            const {email} = verifyJSONwebToken(token);
         
-        if(!token) return res.status(402).json({success:false,message:"Unauthorized"})
-        const {email} = verifyJSONwebToken(token);
-    
-        const user = await User.findOne({email});
-        if(!user) return res.status(402).json({success:false,message:"Unauthorized: Account not found"});
-
+            user = await User.findOne({email});
+            if(!user) return res.status(402).json({success:false,message:"Unauthorized: Account not found"});
+        }
         req.user = user;
         next();
     } catch (error) {
