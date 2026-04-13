@@ -39,17 +39,29 @@ export const volunteerUpdateLocationController = async(req,res)=>{
             return res.status(400).json({success:false,message:"Invalid coordinates"});
         }
 
-        const volunteer = await Volunteer.findByIdAndUpdate(
-            userId,
-            {
-                location: {
-                    type: "Point",
-                    coordinates: [longitude, latitude],
-                },
-            },
-            { returnDocument: "after" }
-        ).select("_id fullname email phone location mode");
+        const volunteerDoc = await Volunteer.findById(userId);
+        if (!volunteerDoc) {
+            return res.status(404).json({success:false,message:"Volunteer not found"});
+        }
 
+        volunteerDoc.location = {
+            type: "Point",
+            coordinates: [longitude, latitude],
+        };
+
+        volunteerDoc.markModified("location");
+        await volunteerDoc.save();
+
+        
+        const volunteer = await Volunteer.findById(userId)
+        .select("_id fullname email phone location mode")
+        .lean();
+        
+        if (!volunteer) {
+            return res.status(404).json({success:false,message:"Volunteer not found"});
+        }
+        
+        console.log("volunteerDoc ",volunteerDoc)
         return res.status(200).json({ success: true, volunteer });
     } catch (error) {
         console.log("Error while updating volunteer location ",error);

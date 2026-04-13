@@ -5,6 +5,7 @@ import Alert from "../model/alert.model.js";
 import Volunteer from "../model/volunteer.model.js";
 
 const NEARBY_DISTANCE_METERS = 500;
+const AVAILABLE_VOLUNTEER_MODES = ["Available", "Call"];
 
 const parseCoordinates = (coordinates) => {
     let latitude;
@@ -46,7 +47,7 @@ const calculateDistanceMeters = ({ from, to }) => {
 };
 
 const findNearbyVolunteers = async ({ latitude, longitude, maxDistance = NEARBY_DISTANCE_METERS, selectFields }) => {
-    const modeFilter = { $nin: ["Busy", "Alloted"] };
+    const modeFilter = { $in: AVAILABLE_VOLUNTEER_MODES };
 
     try {
         return Volunteer.find({
@@ -272,13 +273,16 @@ export const getVolunteerNearbyAlertsController = async (req, res) => {
         }
 
         const { latitude, longitude } = parsedCoordinates;
+        const canReceiveFreshAlerts = AVAILABLE_VOLUNTEER_MODES.includes(volunteer?.mode);
 
         // MongoDB does not allow $near inside $or, so fetch and merge separately.
-        const activeNearbyAlerts = await findActiveNearbyAlerts({
-            latitude,
-            longitude,
-            maxDistance: NEARBY_DISTANCE_METERS,
-        });
+        const activeNearbyAlerts = canReceiveFreshAlerts
+            ? await findActiveNearbyAlerts({
+                latitude,
+                longitude,
+                maxDistance: NEARBY_DISTANCE_METERS,
+            })
+            : [];
 
         const allotedForVolunteer = await Alert.find({
             mode: "Alloted",
