@@ -159,7 +159,7 @@ const releaseVolunteerAssignment = async (alertDoc) => {
     return Volunteer.findByIdAndUpdate(
         assignedVolunteerId,
         { mode: "Available" },
-        { new: true }
+        { returnDocument: "after" }
     )
         .select("_id email phone mode location")
         .lean();
@@ -209,8 +209,6 @@ export const createAlertController = async (req, res) => {
             selectFields: "_id email phone location mode push_token",
         });
 
-        console.log("nearby volunteers ",volunteers);
-
         const nearbyVolunteers = volunteers.map((volunteer) => ({
             _id: volunteer._id,
             email: volunteer.email,
@@ -218,8 +216,6 @@ export const createAlertController = async (req, res) => {
             mode: volunteer.mode,
             location: volunteer.location
         }));
-
-        console.log("mapped nearby volunteers ",nearbyVolunteers);
 
         const emergencyAlert = new Alert({
             user_id: user._id,
@@ -378,7 +374,7 @@ export const volunteerSelectAlertController = async (req, res) => {
                     volunteers: volunteer._id,
                 },
             },
-            { new: true }
+            { returnDocument: "after" }
         )
             .populate("user_id", "fullname email phone")
             .populate("volunteer_id", "email phone location mode");
@@ -460,6 +456,64 @@ export const getAlertStatusController = async (req, res) => {
         });
     } catch (error) {
         console.log("error while getting alert status ", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+export const updateAlertLiveLocationController = async (req, res) => {
+    try {
+        const { alertId } = req.params;
+        const { coordinates } = req.body;
+
+        if (!alertId) {
+            return res.status(400).json({ success: false, message: "Alert id is required" });
+        }
+
+        const parsedCoordinates = parseCoordinates(coordinates);
+        if (!parsedCoordinates) {
+            return res.status(400).json({ success: false, message: "Invalid coordinates" });
+        }
+
+        const alert = await Alert.findOne({
+            _id: alertId,
+            user_id: req.user._id,
+        });
+
+        if (!alert) {
+            return res.status(404).json({ success: false, message: "Alert not found" });
+        }
+
+        if (alert.mode === "Cancelled" || alert.mode === "End") {
+            return res.status(409).json({
+                success: false,
+                message: "Alert is already closed. Location cannot be updated.",
+            });
+        }
+
+        const { latitude, longitude } = parsedCoordinates;
+
+        alert.location = {
+            type: "Point",
+            coordinates: [longitude, latitude],
+        };
+
+        await alert.save();
+
+        const updatedAlert = await hydrateAlert(alert._id);
+        notifyAlertRealtime(updatedAlert, "location-updated");
+
+        return res.status(200).json({
+            success: true,
+            message: "Alert live location updated",
+            alert: updatedAlert,
+        });
+    } catch (error) {
+        console.log("error while updating alert live location ", error);
+
+        if (error?.name === "CastError") {
+            return res.status(400).json({ success: false, message: "Invalid alert id" });
+        }
+
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };

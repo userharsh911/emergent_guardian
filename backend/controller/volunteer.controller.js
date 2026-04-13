@@ -47,12 +47,47 @@ export const volunteerUpdateLocationController = async(req,res)=>{
                     coordinates: [longitude, latitude],
                 },
             },
-            { new: true }
-        ).select("_id email phone location mode");
+            { returnDocument: "after" }
+        ).select("_id fullname email phone location mode");
 
         return res.status(200).json({ success: true, volunteer });
     } catch (error) {
         console.log("Error while updating volunteer location ",error);
+        return res.status(500).json({success:false,message:"Internal server error"});
+    }
+}
+
+export const volunteerUpdateProfileController = async(req,res)=>{
+    try {
+        const userId = req.volunteer._id;
+        const { fullname, phone } = req.body;
+        const updates = {};
+
+        if (typeof fullname === "string" && fullname.trim()) {
+            updates.fullname = fullname.trim();
+        }
+
+        if (phone !== undefined && phone !== null && String(phone).trim()) {
+            updates.phone = String(phone).trim();
+        }
+
+        if (!Object.keys(updates).length) {
+            return res.status(400).json({success:false,message:"No valid fields to update"});
+        }
+
+        const volunteer = await Volunteer.findByIdAndUpdate(
+            userId,
+            { $set: updates },
+            { returnDocument: "after" }
+        ).select("_id fullname email phone location mode");
+
+        if (!volunteer) {
+            return res.status(404).json({success:false,message:"Volunteer not found"});
+        }
+
+        return res.status(200).json({ success: true, volunteer });
+    } catch (error) {
+        console.log("Error while updating volunteer profile ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }

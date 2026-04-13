@@ -6,7 +6,7 @@ import {createJSONwebToken} from "../libs/jwt.js"
 export const signupController = async(req,res)=>{
     try {
         const {email,password,phone,fullname} = req.body;
-        if(!email || !password || !phone) return res.status(400).json({success:false,message:"All fields are required"});
+        if(!email || !password || !phone || !fullname) return res.status(400).json({success:false,message:"All fields are required"});
 
         const existingUser = await User.findOne({ email });
         if(existingUser) return res.status(409).json({success:false,message:"Email already exist"});
@@ -20,7 +20,7 @@ export const signupController = async(req,res)=>{
             email,
             password:hashedPassword,
             phone,
-            fullname: fullname?.trim() || generateUsername("user"),
+            fullname: fullname.trim(),
             as_guest:false
         })
 
@@ -159,7 +159,7 @@ export const updateUserProfileController = async(req,res)=>{
         const updatedUser = await User.findByIdAndUpdate(
             user._id,
             { $set: updates },
-            { new: true }
+            { returnDocument: "after" }
         ).select("-password");
 
         if(!updatedUser){

@@ -1,6 +1,11 @@
 import mongoose from "mongoose"
 
 const volunteerSchema = new mongoose.Schema({
+    fullname:{
+        type:String,
+        required:true,
+        trim:true,
+    },
     email:{
         type:String,
         required:true,
@@ -11,7 +16,7 @@ const volunteerSchema = new mongoose.Schema({
         required:true,
     },
     phone:{
-        type:Number,
+        type:String,
         required:true,
     },
     mode:{

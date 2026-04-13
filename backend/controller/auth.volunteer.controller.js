@@ -4,7 +4,7 @@ import bcryptjs from "bcryptjs"
 
 export const applyVolunteerController = async(req,res)=>{
     try {
-        const {email,password,phone,coordinates} = req.body;
+        const {fullname,email,password,phone,coordinates} = req.body;
 
         let latitude;
         let longitude;
@@ -19,7 +19,7 @@ export const applyVolunteerController = async(req,res)=>{
         latitude = Number(latitude);
         longitude = Number(longitude);
 
-        if(!email || !password || !phone || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        if(!fullname || !email || !password || !phone || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
             return res.status(400).json({success:false,message:"All fields are required"});
         }
 
@@ -32,6 +32,7 @@ export const applyVolunteerController = async(req,res)=>{
         if(!hashedPassword) return res.status(500).json({success:false,message:"Internal server error"})
 
         const volunteer = Volunteer({
+            fullname: fullname.trim(),
             email,
             password:hashedPassword,
             phone,
@@ -65,10 +66,10 @@ export const loginVolunteerController = async(req,res)=>{
         if(!isVerify) return res.status(400).json({success:false,message:"Credentials are invalid"});
 
         const token = createJSONwebToken(email);
-        
-        delete volunteer.password;
+        const volunteerResponse = volunteer.toObject();
+        delete volunteerResponse.password;
 
-        res.send({success:true,token,volunteer});
+        res.send({success:true,token,volunteer: volunteerResponse});
 
     } catch (error) {
         console.log("error while logging as volunteer : ",error);
@@ -78,8 +79,10 @@ export const loginVolunteerController = async(req,res)=>{
 
 export const getVolunteerController = async(req,res)=>{
     try {
-        const volunteer = req.volunteer;
-        res.send({volunteer});
+        const volunteerResponse = req.volunteer.toObject();
+        delete volunteerResponse.password;
+
+        res.send({volunteer: volunteerResponse});
     } catch (error) {
         return res.status(500).json({success:false,message:"Internal server error"});
     }

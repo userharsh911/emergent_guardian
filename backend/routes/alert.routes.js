@@ -3,6 +3,7 @@ import {
 	cancelAlertController,
 	createAlertController,
 	endAlertController,
+	updateAlertLiveLocationController,
 	getAlertStatusController,
 	getUserAlertHistoryController,
 	getVolunteerNearbyAlertsController,
@@ -18,6 +19,9 @@ alertRouter.post('/volunteer/cancel/:token', volunteerProtectedRoute, cancelAler
 
 alertRouter.post('/status/:alertId/:token', userProtectedRoute, getAlertStatusController);
 alertRouter.post('/status/:alertId', userProtectedRoute, getAlertStatusController);
+
+alertRouter.post('/location/:alertId/:token', userProtectedRoute, updateAlertLiveLocationController);
+alertRouter.post('/location/:alertId', userProtectedRoute, updateAlertLiveLocationController);
 
 alertRouter.post('/history/:token', userProtectedRoute, getUserAlertHistoryController);
 alertRouter.post('/history', userProtectedRoute, getUserAlertHistoryController);
