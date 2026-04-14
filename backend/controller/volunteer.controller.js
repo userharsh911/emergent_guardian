@@ -1,4 +1,4 @@
-import Volunteer from "../model/volunteer.model.js";
+﻿import Volunteer from "../model/volunteer.model.js";
 
 export const volunteerSaveTokenController = async(req,res)=>{
     try {
@@ -12,7 +12,6 @@ export const volunteerSaveTokenController = async(req,res)=>{
         await Volunteer.findByIdAndUpdate(userId, { push_token: pushToken });
         res.send({ success: true });
     } catch (error) {
-        console.log("Error while save notification token ",error);
         return res.status(500).json({success:false,message:"Internal server error"})
     }
 }
@@ -61,10 +60,8 @@ export const volunteerUpdateLocationController = async(req,res)=>{
             return res.status(404).json({success:false,message:"Volunteer not found"});
         }
         
-        console.log("volunteerDoc ",volunteerDoc)
         return res.status(200).json({ success: true, volunteer });
     } catch (error) {
-        console.log("Error while updating volunteer location ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }
@@ -99,7 +96,6 @@ export const volunteerUpdateProfileController = async(req,res)=>{
 
         return res.status(200).json({ success: true, volunteer });
     } catch (error) {
-        console.log("Error while updating volunteer profile ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }

@@ -1,4 +1,4 @@
-import express from "express"
+﻿import express from "express"
 import http from "http"
 import mongoose from "mongoose"
 import dotenv from "dotenv"
@@ -13,6 +13,13 @@ import Alert from "../model/alert.model.js";
 import Volunteer from "../model/volunteer.model.js";
 
 dotenv.config();
+
+const { DB_URI, PORT } = process.env;
+
+if (!DB_URI || !PORT) {
+    throw new Error("Missing required environment variables: DB_URI and PORT");
+}
+
 const app = express();
 const ALERT_EXPIRY_JOB_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -22,9 +29,9 @@ const ensureGeoIndexes = async () => {
             Alert.createIndexes(),
             Volunteer.createIndexes(),
         ]);
-        console.log("[indexes] ensured geo indexes for alerts and volunteers");
+        return true;
     } catch (error) {
-        console.log("error while ensuring geo indexes ", error);
+        return false;
     }
 };
 
@@ -32,7 +39,6 @@ const runAlertExpiryJob = async () => {
     try {
         const result = await expireStaleActiveAlerts();
         if (result.expiredCount > 0) {
-            console.log(`[alert-expiry] Auto-cancelled ${result.expiredCount} stale alerts.`);
 
             (result.userIds || []).forEach((userId) => {
                 emitUserAlertRefresh(userId, { reason: "expired" });
@@ -43,7 +49,7 @@ const runAlertExpiryJob = async () => {
             }
         }
     } catch (error) {
-        console.log("error while running alert expiry job ", error);
+        return { expiredCount: 0, userIds: [], volunteerIds: [] };
     }
 };
 
@@ -59,21 +65,23 @@ app.use('/api/volunteer',volunteerRouter);
 app.use('/api/alert',alertRouter);
 app.use('/api',()=>{});
 
-mongoose.connect(process.env.DB_URI)
+mongoose.connect(DB_URI)
 .then(async ()=>{
     await ensureGeoIndexes();
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
 
-    httpServer.listen(process.env.PORT,()=>{
-        console.log(`app is running on http://localhost:${process.env.PORT}`);
+    httpServer.on("error", () => {
+        process.exit(1);
     });
+
+    httpServer.listen(PORT);
 
     runAlertExpiryJob();
     setInterval(runAlertExpiryJob, ALERT_EXPIRY_JOB_INTERVAL_MS);
 
 })
-.catch((err)=>{
-    console.log("error while connect to mongodb ",err);
+.catch(()=>{
+    process.exit(1);
 })

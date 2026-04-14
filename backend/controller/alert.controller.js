@@ -1,4 +1,4 @@
-import sendPushNotification from "../libs/sendNotification.js";
+﻿import sendPushNotification from "../libs/sendNotification.js";
 import { expireStaleActiveAlerts, getAlertLifecycleMeta } from "../libs/alertLifecycle.js";
 import { emitUserAlertRefresh, emitVolunteerAlertsRefresh } from "../libs/socket.js";
 import Alert from "../model/alert.model.js";
@@ -87,7 +87,6 @@ const findNearbyVolunteers = async ({ latitude, longitude, maxDistance = NEARBY_
 
         return volunteers.filter((volunteer) => isVolunteerEligibleForActiveAlerts(volunteer));
     } catch (error) {
-        console.log("volunteer geo query fallback", error?.message || error);
 
         const volunteers = await Volunteer.find({ isverified: true })
             .select(selectFields)
@@ -127,7 +126,6 @@ const findActiveNearbyAlerts = async ({ latitude, longitude, maxDistance = NEARB
             .populate("volunteer_id", "email phone location mode")
             .lean();
     } catch (error) {
-        console.log("alert geo query fallback", error?.message || error);
 
         const activeAlerts = await Alert.find({ mode: "Active" })
             .populate("user_id", "fullname email phone")
@@ -178,7 +176,6 @@ const findVolunteerIdsNearCoordinates = async ({ latitude, longitude, maxDistanc
             .map((volunteer) => toIdString(volunteer?._id))
             .filter(Boolean);
     } catch (error) {
-        console.log("volunteer notify geo fallback", error?.message || error);
 
         const volunteers = await Volunteer.find({ isverified: true })
             .select("_id location mode isverified")
@@ -272,7 +269,7 @@ const notifyAlertRealtime = async (alertDoc, reason = "updated", volunteerIds = 
 const hydrateAlert = async (alertId) => {
     return Alert.findById(alertId)
         .populate("user_id", "fullname email phone")
-        .populate("volunteer_id", "_id email phone mode location")
+    .populate("volunteer_id", "_id fullname email phone mode location")
         .lean();
 };
 
@@ -346,7 +343,6 @@ export const createAlertController = async (req, res) => {
                     userId: user?._id,
                 });
             } catch (uploadError) {
-                console.log("error while uploading alert image ", uploadError);
                 return res.status(500).json({
                     success: false,
                     message: "Unable to upload alert image right now",
@@ -358,11 +354,12 @@ export const createAlertController = async (req, res) => {
             latitude,
             longitude,
             maxDistance: NEARBY_DISTANCE_METERS,
-            selectFields: "_id email phone location mode push_token isverified",
+            selectFields: "_id fullname email phone location mode push_token isverified",
         });
 
         const nearbyVolunteers = volunteers.map((volunteer) => ({
             _id: volunteer._id,
+            fullname: volunteer.fullname,
             email: volunteer.email,
             phone: volunteer.phone,
             mode: volunteer.mode,
@@ -423,7 +420,6 @@ export const createAlertController = async (req, res) => {
         });
 
     } catch (error) {
-        console.log("error while creating alert ", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -477,7 +473,6 @@ export const getVolunteerNearbyAlertsController = async (req, res) => {
 
         return res.status(200).json({ success: true, alerts });
     } catch (error) {
-        console.log("error while getting volunteer nearby alerts ", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -573,7 +568,6 @@ export const volunteerSelectAlertController = async (req, res) => {
             alert: selectedAlert,
         });
     } catch (error) {
-        console.log("error while volunteer selecting alert ", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -666,7 +660,7 @@ export const hireVolunteerController = async (req, res) => {
             { returnDocument: "after" }
         )
             .populate("user_id", "fullname email phone")
-            .populate("volunteer_id", "_id email phone mode location");
+            .populate("volunteer_id", "_id fullname email phone mode location");
 
         if (!hiredAlert) {
             return res.status(409).json({ success: false, message: "Alert is not available for hiring" });
@@ -682,7 +676,6 @@ export const hireVolunteerController = async (req, res) => {
             alert: hiredAlert,
         });
     } catch (error) {
-        console.log("error while hiring volunteer ", error);
 
         if (error?.name === "CastError") {
             return res.status(400).json({ success: false, message: "Invalid alert id or volunteer id" });
@@ -706,7 +699,7 @@ export const getAlertStatusController = async (req, res) => {
             _id: alertId,
             user_id: req.user._id,
         })
-            .populate("volunteer_id", "_id email phone mode location")
+            .populate("volunteer_id", "_id fullname email phone mode location")
             .lean();
 
         if (!alert) {
@@ -724,12 +717,12 @@ export const getAlertStatusController = async (req, res) => {
             latitude,
             longitude,
             maxDistance: NEARBY_DISTANCE_METERS,
-            selectFields: "_id email phone location mode isverified",
+            selectFields: "_id fullname email phone location mode isverified",
         });
         const respondedVolunteerIds = Array.isArray(alert?.volunteers) ? alert.volunteers : [];
         const respondedVolunteers = respondedVolunteerIds.length
             ? await Volunteer.find({ _id: { $in: respondedVolunteerIds }, isverified: true })
-                .select("_id email phone location mode isverified")
+                .select("_id fullname email phone location mode isverified")
                 .lean()
             : [];
 
@@ -746,6 +739,7 @@ export const getAlertStatusController = async (req, res) => {
         if (alert?.volunteer_id?._id) {
             nearbyVolunteersMap.set(alert.volunteer_id._id.toString(), {
                 _id: alert.volunteer_id._id,
+                fullname: alert.volunteer_id.fullname,
                 email: alert.volunteer_id.email,
                 phone: alert.volunteer_id.phone,
                 location: alert.volunteer_id.location,
@@ -764,7 +758,6 @@ export const getAlertStatusController = async (req, res) => {
             lifecycle: getAlertLifecycleMeta(alert),
         });
     } catch (error) {
-        console.log("error while getting alert status ", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -774,7 +767,7 @@ export const getUserAlertHistoryController = async (req, res) => {
         await expireStaleActiveAlerts({ userId: req.user._id });
 
         const alerts = await Alert.find({ user_id: req.user._id })
-            .populate("volunteer_id", "_id email phone mode location")
+            .populate("volunteer_id", "_id fullname email phone mode location")
             .sort({ createdAt: -1 })
             .lean();
 
@@ -789,7 +782,6 @@ export const getUserAlertHistoryController = async (req, res) => {
             totalAlerts: alertsWithLifecycle.length,
         });
     } catch (error) {
-        console.log("error while getting user alert history ", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -809,7 +801,7 @@ export const getVolunteerAlertHistoryController = async (req, res) => {
             ],
         })
             .populate("user_id", "fullname email phone")
-            .populate("volunteer_id", "_id email phone mode location")
+            .populate("volunteer_id", "_id fullname email phone mode location")
             .sort({ createdAt: -1 })
             .lean();
 
@@ -851,7 +843,6 @@ export const getVolunteerAlertHistoryController = async (req, res) => {
             },
         });
     } catch (error) {
-        console.log("error while getting volunteer alert history ", error);
         return res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
@@ -914,7 +905,6 @@ export const cancelAlertController = async (req, res) => {
             releasedVolunteer,
         });
     } catch (error) {
-        console.log("error while cancelling alert ", error);
 
         if (error?.name === "CastError") {
             return res.status(400).json({ success: false, message: "Invalid alert id" });
@@ -978,7 +968,6 @@ export const endAlertController = async (req, res) => {
         });
 
     } catch (error) {
-        console.log("error while ending alert ", error);
 
         if (error?.name === "CastError") {
             return res.status(400).json({ success: false, message: "Invalid alert id" });

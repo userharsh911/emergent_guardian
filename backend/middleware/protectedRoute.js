@@ -1,4 +1,4 @@
-import { verifyJSONwebToken } from "../libs/jwt.js";
+﻿import { verifyJSONwebToken } from "../libs/jwt.js";
 import User from "../model/user.model.js";
 import Volunteer from "../model/volunteer.model.js";
 
@@ -14,7 +14,6 @@ export const volunteerProtectedRoute = async(req,res,next)=>{
         req.volunteer = volunteer;
         next();
     } catch (error) {
-        console.log("Error while verifying token ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }
@@ -36,7 +35,6 @@ export const userProtectedRoute = async(req,res,next)=>{
         req.user = user;
         next();
     } catch (error) {
-        console.log("Error while verifying token ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }

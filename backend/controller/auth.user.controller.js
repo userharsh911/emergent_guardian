@@ -1,4 +1,4 @@
-import bcryptjs from "bcryptjs";
+﻿import bcryptjs from "bcryptjs";
 import User from "../model/user.model.js";
 import { generateUsername } from "../libs/username.js";
 import {createJSONwebToken} from "../libs/jwt.js"
@@ -35,7 +35,6 @@ export const signupController = async(req,res)=>{
 
 
     } catch (error) {
-        console.log("error while creating an account : ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }
@@ -61,7 +60,6 @@ export const loginController = async(req,res)=>{
         res.send({success:true,token,user:userResponse});
 
     } catch (error) {
-        console.log("error while logging : ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }
@@ -118,7 +116,6 @@ export const loginAsGuestController = async(req,res)=>{
         });
 
     } catch (error) {
-        console.log("error while logging as guest : ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 
@@ -168,7 +165,6 @@ export const updateUserProfileController = async(req,res)=>{
 
         return res.status(200).json({success:true,user:updatedUser});
     } catch (error) {
-        console.log("error while updating user profile : ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }

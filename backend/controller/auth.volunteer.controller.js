@@ -1,4 +1,4 @@
-import { createJSONwebToken } from "../libs/jwt.js";
+﻿import { createJSONwebToken } from "../libs/jwt.js";
 import { uploadVolunteerDocumentToCloudinary } from "../libs/cloudinary.js";
 import Volunteer from "../model/volunteer.model.js";
 import bcryptjs from "bcryptjs"
@@ -52,7 +52,6 @@ export const applyVolunteerController = async(req,res)=>{
                 originalName: verificationDocumentFile.originalname,
             });
         } catch (uploadError) {
-            console.log("error while uploading volunteer document : ", uploadError);
             return res.status(500).json({
                 success: false,
                 message: "Unable to upload volunteer document",
@@ -95,7 +94,6 @@ export const applyVolunteerController = async(req,res)=>{
         res.status(201).send({success:true,token,volunteer: volunteerResponse});
 
     } catch (error) {
-        console.log("error while applying as volunteer : ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }
@@ -118,7 +116,6 @@ export const loginVolunteerController = async(req,res)=>{
         res.send({success:true,token,volunteer: volunteerResponse});
 
     } catch (error) {
-        console.log("error while logging as volunteer : ",error);
         return res.status(500).json({success:false,message:"Internal server error"});
     }
 }
