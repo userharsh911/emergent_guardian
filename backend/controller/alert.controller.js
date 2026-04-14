@@ -705,6 +705,68 @@ export const getUserAlertHistoryController = async (req, res) => {
     }
 };
 
+export const getVolunteerAlertHistoryController = async (req, res) => {
+    try {
+        const volunteerId = req.volunteer?._id;
+
+        if (!volunteerId) {
+            return res.status(400).json({ success: false, message: "Volunteer context is missing" });
+        }
+
+        const alerts = await Alert.find({
+            $or: [
+                { volunteer_id: volunteerId },
+                { volunteers: volunteerId },
+            ],
+        })
+            .populate("user_id", "fullname email phone")
+            .populate("volunteer_id", "_id email phone mode location")
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const normalizedVolunteerId = String(volunteerId);
+
+        const alertsWithInvolvement = alerts.map((alert) => {
+            const assignedVolunteerId = toIdString(alert?.volunteer_id);
+            const assignedToMe = assignedVolunteerId === normalizedVolunteerId;
+            const respondedByMe = hasVolunteerRespondedToAlert(alert, volunteerId);
+
+            return {
+                ...alert,
+                lifecycle: getAlertLifecycleMeta(alert),
+                involvement: {
+                    assignedToMe,
+                    respondedByMe,
+                },
+            };
+        });
+
+        const assignedAlerts = alertsWithInvolvement.filter((alert) => alert?.involvement?.assignedToMe).length;
+        const respondedAlerts = alertsWithInvolvement.filter((alert) => alert?.involvement?.respondedByMe).length;
+        const completedAlerts = alertsWithInvolvement.filter(
+            (alert) => alert?.mode === "End" && (alert?.involvement?.assignedToMe || alert?.involvement?.respondedByMe)
+        ).length;
+        const activeAlerts = alertsWithInvolvement.filter(
+            (alert) => alert?.mode === "Active" || alert?.mode === "Alloted"
+        ).length;
+
+        return res.status(200).json({
+            success: true,
+            alerts: alertsWithInvolvement,
+            summary: {
+                totalAlerts: alertsWithInvolvement.length,
+                assignedAlerts,
+                respondedAlerts,
+                completedAlerts,
+                activeAlerts,
+            },
+        });
+    } catch (error) {
+        console.log("error while getting volunteer alert history ", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
 export const cancelAlertController = async (req, res) => {
     try {
         const user = req.user;

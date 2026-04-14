@@ -5,6 +5,7 @@ import {
 	endAlertController,
 	getAlertStatusController,
 	getUserAlertHistoryController,
+	getVolunteerAlertHistoryController,
 	getVolunteerNearbyAlertsController,
 	hireVolunteerController,
 	volunteerSelectAlertController,
@@ -15,6 +16,7 @@ const alertRouter = express.Router();
 
 alertRouter.get('/volunteer/active/:token', volunteerProtectedRoute, getVolunteerNearbyAlertsController);
 alertRouter.post('/volunteer/select/:token', volunteerProtectedRoute, volunteerSelectAlertController);
+alertRouter.post('/volunteer/history/:token', volunteerProtectedRoute, getVolunteerAlertHistoryController);
 alertRouter.post('/volunteer/cancel/:token', volunteerProtectedRoute, cancelAlertController);
 
 alertRouter.post('/status/:alertId/:token', userProtectedRoute, getAlertStatusController);
