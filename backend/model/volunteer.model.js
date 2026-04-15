@@ -68,6 +68,26 @@ const volunteerSchema = new mongoose.Schema({
     push_token: {
         type: String,
         default: null
+    },
+    email_otp: {
+        type: String,
+        default: null,
+    },
+    email_otp_verified: {
+        type: Boolean,
+        default: true,
+    },
+    email_otp_expires_at: {
+        type: Date,
+        default: null,
+    },
+    email_otp_daily_count: {
+        type: Number,
+        default: 0,
+    },
+    email_otp_daily_reset_at: {
+        type: Date,
+        default: null,
     }
 },{timestamps:true});
 
