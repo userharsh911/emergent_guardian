@@ -264,6 +264,20 @@ const notifyAlertRealtime = async (alertDoc, reason = "updated", volunteerIds = 
         : await resolveRelevantVolunteerIdsForAlert(alertDoc);
 
     emitVolunteerAlertsRefresh({ alertId, reason }, targetVolunteerIds);
+
+    const normalizedReason = String(reason || "").trim().toLowerCase();
+
+    if (["alloted", "cancelled", "ended"].includes(normalizedReason)) {
+        const pushTargetVolunteerIds = normalizedReason === "alloted"
+            ? [toIdString(alertDoc?.volunteer_id)].filter(Boolean)
+            : collectAlertParticipantVolunteerIds(alertDoc);
+
+        await sendVolunteerLifecyclePushNotification({
+            reason: normalizedReason,
+            alertDoc,
+            volunteerIds: pushTargetVolunteerIds,
+        });
+    }
 };
 
 const hydrateAlert = async (alertId) => {
@@ -293,6 +307,120 @@ const hasVolunteerRespondedToAlert = (alertDoc, volunteerId) => {
     if (!Array.isArray(alertDoc?.volunteers)) return false;
 
     return alertDoc.volunteers.some((id) => String(id) === String(volunteerId));
+};
+
+const collectAlertParticipantVolunteerIds = (alertDoc) => {
+    const volunteerIds = new Set();
+
+    const assignedVolunteerId = toIdString(alertDoc?.volunteer_id);
+    if (assignedVolunteerId) {
+        volunteerIds.add(assignedVolunteerId);
+    }
+
+    if (Array.isArray(alertDoc?.volunteers)) {
+        alertDoc.volunteers.forEach((volunteerId) => {
+            const normalizedVolunteerId = toIdString(volunteerId);
+            if (normalizedVolunteerId) {
+                volunteerIds.add(normalizedVolunteerId);
+            }
+        });
+    }
+
+    return Array.from(volunteerIds);
+};
+
+const findVolunteerPushTokens = async (volunteerIds = []) => {
+    const normalizedVolunteerIds = Array.from(
+        new Set((volunteerIds || []).map((volunteerId) => toIdString(volunteerId)).filter(Boolean))
+    );
+
+    if (!normalizedVolunteerIds.length) {
+        return [];
+    }
+
+    const volunteers = await Volunteer.find({
+        _id: { $in: normalizedVolunteerIds },
+        isverified: true,
+        push_token: { $exists: true, $ne: null },
+    })
+        .select("push_token")
+        .lean();
+
+    return Array.from(
+        new Set(
+            volunteers
+                .map((volunteer) => String(volunteer?.push_token || "").trim())
+                .filter(Boolean)
+        )
+    );
+};
+
+const buildVolunteerLifecyclePushPayload = (reason, alertDoc) => {
+    const normalizedReason = String(reason || "").trim().toLowerCase();
+    const alertId = toIdString(alertDoc?._id);
+
+    if (!alertId) {
+        return null;
+    }
+
+    const userName = alertDoc?.user_id?.fullname || alertDoc?.user_id?.email || "A user";
+    const parsedCoordinates = parseCoordinates(alertDoc?.location?.coordinates);
+    const data = {
+        screen: "/(app)/(tabs)/(home)",
+        alertId,
+        reason: normalizedReason,
+    };
+
+    if (parsedCoordinates) {
+        data.latitude = parsedCoordinates.latitude;
+        data.longitude = parsedCoordinates.longitude;
+    }
+
+    if (normalizedReason === "alloted") {
+        return {
+            title: "Emergency assigned to you",
+            body: `${userName} selected you for emergency support.`,
+            data,
+        };
+    }
+
+    if (normalizedReason === "cancelled") {
+        return {
+            title: "Emergency request cancelled",
+            body: `${userName} cancelled the emergency request.`,
+            data,
+        };
+    }
+
+    if (normalizedReason === "ended") {
+        return {
+            title: "Emergency marked completed",
+            body: `${userName} ended the emergency request.`,
+            data,
+        };
+    }
+
+    return null;
+};
+
+const sendVolunteerLifecyclePushNotification = async ({ reason, alertDoc, volunteerIds = [] }) => {
+    try {
+        const payload = buildVolunteerLifecyclePushPayload(reason, alertDoc);
+        if (!payload) {
+            return { success: false, notifiedCount: 0 };
+        }
+
+        const tokens = await findVolunteerPushTokens(volunteerIds);
+        if (!tokens.length) {
+            return { success: false, notifiedCount: 0 };
+        }
+
+        await sendPushNotification(tokens, payload.title, payload.body, payload.data);
+
+        return { success: true, notifiedCount: tokens.length };
+    } catch (_error) {
+        return { success: false, notifiedCount: 0 };
+    }
 };
 
 export const createAlertController = async (req, res) => {
@@ -797,7 +925,7 @@ export const getVolunteerAlertHistoryController = async (req, res) => {
         const alerts = await Alert.find({
             $or: [
                 { volunteer_id: volunteerId },
-                { volunteers: volunteerId },
+                { volunteers: [volunteerId] },
             ],
         })
             .populate("user_id", "fullname email phone")
